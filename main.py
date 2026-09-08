@@ -102,11 +102,22 @@ def init_db():
         )
     ''')
     
+    # 👇 AQUI ESTÃO AS NOVAS DISCIPLINAS FOCADAS NO EDITAL DA SEDUC-PA 2026
     disciplinas_padrao = [
-        "Língua Portuguesa", "Matemática", "Raciocínio Lógico", 
-        "Noções de Informática", "Direito Constitucional", 
-        "Direito Administrativo", "Direito Penal", "Direito Processual Penal", 
-        "Direito Civil", "Legislação Especial", "Atualidades"
+        "Professor - Língua Portuguesa", "Professor - Matemática", 
+        "Professor - História", "Professor - Geografia", 
+        "Professor - Filosofia", "Professor - Sociologia", 
+        "Professor - Física", "Professor - Química", 
+        "Professor - Biologia", "Professor - Língua Inglesa", 
+        "Professor - Artes", "Professor - Educação Física", 
+        "Professor - Educação Especial (AEE)", "Professor - Educação Especial (LIBRAS)",
+        "Especialista em Educação (Pedagogia)", 
+        "Analista - Nutrição", "Analista - Psicologia", "Analista - Serviço Social", 
+        "Analista - Arquitetura e Urbanismo", "Analista - Engenharia Civil", 
+        "Analista - Engenharia Elétrica", "Analista - Administração", 
+        "Analista - Ciências Contábeis", "Analista - Ciências Econômicas", 
+        "Analista - Estatística", 
+        "Assistente de Gestão Educacional (Nível Médio)"
     ]
     for d in disciplinas_padrao:
         cursor.execute("INSERT OR IGNORE INTO disciplinas (nome) VALUES (?)", (d,))
