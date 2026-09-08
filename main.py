@@ -138,12 +138,15 @@ class GerarRequest(BaseModel):
     nivel: str = "Ensino Médio"
     quantidade: int = 10
     banca: Optional[str] = ""
+    orgao: Optional[str] = ""
     topico: Optional[str] = ""
     tipo: str = "reais"
 
 class GerarSimuladoRequest(BaseModel):
     nivel: str = "Ensino Médio"
     quantidade: int = 10
+    banca: Optional[str] = ""
+    orgao: Optional[str] = ""
     tipo: str = "reais"
 
 class ResponderRequest(BaseModel):
@@ -286,26 +289,26 @@ async def gerar_lote_questoes_ia(prompt: str, disciplina_id: int, topico_especif
             cursor.execute('''INSERT INTO questoes (disciplina_id, enunciado, alternativas, gabarito, explicacao, video_url, banca, ano, concurso, topico_especifico)
                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
                            (disciplina_id, enunciado, json.dumps(alts_limpas), gabarito, explicacao, f"https://www.youtube.com/results?search_query={query}", banca, ano, concurso, topico_especifico))
-            
-        conn.commit()
-        conn.close()
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="A IA retornou um formato inválido.")
-
-@app.get("/api/config")
-def get_config():
-    conn = sqlite3.connect("estudos.db")
-    row = conn.execute("SELECT valor FROM config WHERE chave='groq_key'").fetchone()
-    conn.close()
-    return {"groq_key": row[0] if row else ""}
-
-@app.post("/api/config")
-def set_config(config: ConfigAPI):
-    conn = sqlite3.connect("estudos.db")
-    if config.groq_key is not None:
-        conn.execute("UPDATE config SET valor = ? WHERE chave = 'groq_key'", (config.groq_key,))
-        if conn.execute("SELECT changes()").fetchone()[0] == 0:
-            conn.execute("INSERT INTO config (chave, valor) VALUES ('groq_key', ?)", (config.groq_key,))
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chave TEXT,
+            valor TEXT
+        )
+    ''')
+    
+    # 👇 DISCIPLINAS AMPLAS (Para todas as carreiras: Policiais, Educacionais, Administrativas, Tribunais)
+    disciplinas_padrao = [
+        "Língua Portuguesa", "Matemática", "Raciocínio Lógico", "Informática",
+        "Direito Constitucional", "Direito Administrativo", "Direito Penal", 
+        "Direito Processual Penal", "Legislação Extravagante", "Direitos Humanos",
+        "Conhecimentos Pedagógicos", "Legislação Educacional", 
+        "Administração Pública", "Administração Financeira e Orçamentária (AFO)",
+        "Atualidades", "Redação Oficial"
+    ]
+    for d in disciplinas_padrao:
+        cursor.execute("INSERT OR IGNORE INTO disciplinas (nome) VALUES (?)", (d,))
+        
     conn.commit()
     conn.close()
     return {"status": "sucesso"}
@@ -423,12 +426,13 @@ async def api_gerar(req: GerarRequest):
     if not row: raise HTTPException(status_code=404)
     
     topico_txt = f" Foco/Assunto Específico exigido: {req.topico}." if req.topico else ""
+    orgao_txt = f" Órgão/Carreira alvo: {req.orgao}." if req.orgao else ""
     
     if req.tipo == "reais":
         banca_exigida = req.banca if req.banca else "qualquer banca real"
         prompt = f"""Você é um banco de dados rigoroso de concursos públicos.
 Sua tarefa é recuperar EXATAMENTE {req.quantidade} questões REAIS de provas anteriores da disciplina '{row[0]}'.
-Nível de escolaridade: {req.nivel}. Banca exigida: {banca_exigida}. {topico_txt}
+Nível de escolaridade: {req.nivel}. Banca exigida: {banca_exigida}.{orgao_txt}{topico_txt}
 
 REGRAS CRÍTICAS (PUNIÇÃO SE DESCUMPRIR):
 1. DIVERSIDADE EXTREMA: NENHUMA questão pode ser repetida. Puxe temas diferentes.
@@ -483,10 +487,13 @@ async def api_gerar_simulado(req: GerarSimuladoRequest):
     if not disciplinas: raise HTTPException(status_code=400)
     qtd = max(1, req.quantidade // len(disciplinas))
     
+    orgao_txt = f" Órgão/Carreira alvo: {req.orgao}." if req.orgao else ""
+    banca_exigida = req.banca if req.banca else "qualquer banca real"
+    
     for d_id, nome in disciplinas:
         if req.tipo == "reais":
             prompt = f"""Recupere {qtd} questões REAIS de concursos passados da disciplina '{nome}'. 
-Nível: {req.nivel}. PROIBIDO INVENTAR. AS QUESTÕES DEVEM SER DIFERENTES ENTRE SI.
+Nível: {req.nivel}. Banca exigida: {banca_exigida}.{orgao_txt} PROIBIDO INVENTAR. AS QUESTÕES DEVEM SER DIFERENTES ENTRE SI.
 REGRAS: PROIBIDO usar "Simulado". Preencha "concurso" com Órgão e Cargo reais (Ex: TJ-SP - Escrevente). O texto das alternativas deve ser COMPLETO (proibido apenas letras soltas).
 Siga EXATAMENTE este JSON:
 {{
