@@ -102,22 +102,15 @@ def init_db():
         )
     ''')
     
-    # 👇 AQUI ESTÃO AS NOVAS DISCIPLINAS FOCADAS NO EDITAL DA SEDUC-PA 2026
+    # 👇 DISCIPLINAS GERAIS (Para Segurança Pública, Educação, Tribunais, Administrativos)
     disciplinas_padrao = [
-        "Professor - Língua Portuguesa", "Professor - Matemática", 
-        "Professor - História", "Professor - Geografia", 
-        "Professor - Filosofia", "Professor - Sociologia", 
-        "Professor - Física", "Professor - Química", 
-        "Professor - Biologia", "Professor - Língua Inglesa", 
-        "Professor - Artes", "Professor - Educação Física", 
-        "Professor - Educação Especial (AEE)", "Professor - Educação Especial (LIBRAS)",
-        "Especialista em Educação (Pedagogia)", 
-        "Analista - Nutrição", "Analista - Psicologia", "Analista - Serviço Social", 
-        "Analista - Arquitetura e Urbanismo", "Analista - Engenharia Civil", 
-        "Analista - Engenharia Elétrica", "Analista - Administração", 
-        "Analista - Ciências Contábeis", "Analista - Ciências Econômicas", 
-        "Analista - Estatística", 
-        "Assistente de Gestão Educacional (Nível Médio)"
+        "Língua Portuguesa", "Matemática", "Raciocínio Lógico", "Informática",
+        "Direito Constitucional", "Direito Administrativo", "Direito Penal", 
+        "Direito Processual Penal", "Legislação Extravagante", "Direitos Humanos",
+        "Conhecimentos Pedagógicos", "Legislação Educacional", 
+        "Administração Pública", "Administração Financeira e Orçamentária (AFO)",
+        "Atualidades", "Redação Oficial", "Física", "Química", "Biologia",
+        "História", "Geografia", "Filosofia", "Sociologia"
     ]
     for d in disciplinas_padrao:
         cursor.execute("INSERT OR IGNORE INTO disciplinas (nome) VALUES (?)", (d,))
@@ -289,29 +282,13 @@ async def gerar_lote_questoes_ia(prompt: str, disciplina_id: int, topico_especif
             cursor.execute('''INSERT INTO questoes (disciplina_id, enunciado, alternativas, gabarito, explicacao, video_url, banca, ano, concurso, topico_especifico)
                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
                            (disciplina_id, enunciado, json.dumps(alts_limpas), gabarito, explicacao, f"https://www.youtube.com/results?search_query={query}", banca, ano, concurso, topico_especifico))
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS config (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            chave TEXT,
-            valor TEXT
-        )
-    ''')
-    
-    # 👇 DISCIPLINAS AMPLAS (Para todas as carreiras: Policiais, Educacionais, Administrativas, Tribunais)
-    disciplinas_padrao = [
-        "Língua Portuguesa", "Matemática", "Raciocínio Lógico", "Informática",
-        "Direito Constitucional", "Direito Administrativo", "Direito Penal", 
-        "Direito Processual Penal", "Legislação Extravagante", "Direitos Humanos",
-        "Conhecimentos Pedagógicos", "Legislação Educacional", 
-        "Administração Pública", "Administração Financeira e Orçamentária (AFO)",
-        "Atualidades", "Redação Oficial"
-    ]
-    for d in disciplinas_padrao:
-        cursor.execute("INSERT OR IGNORE INTO disciplinas (nome) VALUES (?)", (d,))
-        
-    conn.commit()
-    conn.close()
-    return {"status": "sucesso"}
+
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Erro ao processar lote da IA: {e}")
+        if 'conn' in locals():
+            conn.close()
 
 @app.post("/api/reset_db")
 def reset_db():
