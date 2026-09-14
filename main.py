@@ -3,7 +3,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 from typing import Optional, Dict
 import httpx
@@ -137,6 +137,39 @@ class SalvarAnotacaoRequest(BaseModel):
 class SalvarHtmlRequest(BaseModel):
     questao_id: int
     html: str
+
+# 👇 NOVAS ROTAS PWA (GERAÇÃO AUTOMÁTICA PARA O CELULAR) 👇
+@app.get("/manifest.json")
+def get_manifest():
+    return JSONResponse({
+        "name": "ProEstudos 4.0",
+        "short_name": "ProEstudos",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#0f172a",
+        "theme_color": "#4f46e5",
+        "icons": [
+            {
+                "src": "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎓</text></svg>",
+                "sizes": "192x192 512x512",
+                "type": "image/svg+xml",
+                "purpose": "any maskable"
+            }
+        ]
+    })
+
+@app.get("/sw.js")
+def get_service_worker():
+    sw_code = """
+    self.addEventListener('install', (e) => {
+        e.waitUntil(caches.open('proestudos-v1').then((cache) => cache.addAll(['/'])));
+    });
+    self.addEventListener('fetch', (e) => {
+        e.respondWith(caches.match(e.request).then((response) => response || fetch(e.request)));
+    });
+    """
+    return Response(content=sw_code, media_type="application/javascript")
+# 👆 FIM DAS ROTAS PWA 👆
 
 @app.get("/")
 def index():
