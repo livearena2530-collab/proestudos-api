@@ -73,8 +73,8 @@ def init_db():
             data TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-
-    # CORREÇÃO 1: Garante que a coluna 'data' exista caso o banco seja da versão antiga
+    
+    # GARANTIA: Adiciona a coluna data se o banco for antigo (Corrige o erro do gráfico)
     cursor.execute('ALTER TABLE progresso ADD COLUMN IF NOT EXISTS data TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
 
     # Insere matérias iniciais se estiver vazio
@@ -101,11 +101,10 @@ class RespostaQuestao(BaseModel):
 class FiltrosIA(BaseModel):
     disciplina_id: int
     quantidade: int
-    origem: str
-    nivel: str
+    estilo: str
+    area: str
     banca: str
-    concurso: str
-    filtro: str
+    cargo: str
 
 class PerfilCreate(BaseModel):
     nome: str
@@ -204,7 +203,7 @@ def get_estatisticas(perfil_id: int):
     cursor.execute('SELECT COUNT(*) as erros FROM progresso WHERE perfil_id = %s AND acertou = FALSE', (perfil_id,))
     erros = cursor.fetchone()['erros']
     
-    # Histórico dos últimos 7 dias (Simplificado para Postgres)
+    # Histórico dos últimos 7 dias
     cursor.execute('''
         SELECT DATE(data) as dia, COUNT(*) as total 
         FROM progresso 
@@ -232,19 +231,18 @@ async def gerar_questoes_ia(filtros: FiltrosIA):
         
     materia_nome = disc['nome']
     
-    # Construção do Prompt Avançado
-    prompt = f"Gere {filtros.quantidade} questões de múltipla escolha sobre {materia_nome}.\n"
-    prompt += f"- Origem: {filtros.origem} (se reais, tente simular questões exatas de provas. Se inéditas, invente casos complexos).\n"
-    prompt += f"- Nível de dificuldade: {filtros.nivel}.\n"
+    # Construção do Prompt Baseado nos Filtros da Interface
+    prompt = f"Gere {filtros.quantidade} questões de múltipla escolha sobre a disciplina {materia_nome}.\n"
+    prompt += f"Estilo: {filtros.estilo}.\n"
     
-    if filtros.banca != "Qualquer Banca":
-        prompt += f"- Estilo da Banca Examinadora: {filtros.banca}.\n"
+    if filtros.area != "Geral / Sem Filtro":
+        prompt += f"Foco na Área do Concurso: {filtros.area}.\n"
         
-    if filtros.concurso != "Qualquer Concurso":
-        prompt += f"- Foco no Concurso/Área: {filtros.concurso}.\n"
+    if filtros.banca != "Diversas Bancas":
+        prompt += f"Simular o estilo da Banca: {filtros.banca}.\n"
         
-    if filtros.filtro and filtros.filtro.strip() != "":
-        prompt += f"- Tópico específico (Filtro Cirúrgico): OBRIGATORIAMENTE sobre '{filtros.filtro}'.\n"
+    if filtros.cargo != "Qualquer Cargo da Área" and filtros.cargo != "":
+        prompt += f"Cargo alvo: {filtros.cargo}.\n"
 
     prompt += """
     Retorne APENAS um array JSON válido, sem markdown, sem formatação ```json, estritamente neste formato:
@@ -259,54 +257,66 @@ async def gerar_questoes_ia(filtros: FiltrosIA):
     A 'correta' deve ser o índice (0 a 4) da opção certa.
     """
     
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resposta = await client.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {GROQ_API_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": "llama-3.1-8b-instant",  # Modelo mais rápido e garantido da Groq
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.3
-                }
-            )
-            
-            # Se a Groq der erro, o código vai pular direto para a linha 'except httpx.HTTPStatusError'
-            resposta.raise_for_status()
-            
-            dados = resposta.json()
-            conteudo_str = dados['choices'][0]['message']['content'].strip()
-            
-            # Limpa possível formatação markdown gerada pela IA
-            if conteudo_str.startswith("```"):
-                conteudo_str = conteudo_str.split('\n', 1)[1]
-            if conteudo_str.endswith("```"):
-                conteudo_str = conteudo_str.rsplit('\n', 1)[0]
-                
-            questoes_geradas = json.loads(conteudo_str)
-            
-            # Salva no banco
-            for q in questoes_geradas:
-                cursor.execute(
-                    'INSERT INTO questoes (disciplina_id, enunciado, opcoes, correta, explicacao) VALUES (%s, %s, %s, %s, %s)',
-                    (filtros.disciplina_id, q['enunciado'], json.dumps(q['opcoes']), q['correta'], q['explicacao'])
+    # SISTEMA DE FALLBACK (À Prova de Balas)
+    # Se um modelo da Groq falhar, ele automaticamente tenta o próximo da lista!
+    modelos_para_testar = [
+        "llama3-8b-8192",          # Modelo clássico, super rápido e 100% gratuito.
+        "mixtral-8x7b-32768",      # Backup 1: Muito inteligente.
+        "gemma-7b-it"              # Backup 2: Criado pelo Google, sempre ativo.
+    ]
+    
+    ultimo_erro = ""
+    
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        for modelo in modelos_para_testar:
+            try:
+                resposta = await client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {GROQ_API_KEY}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": modelo,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.3
+                    }
                 )
-            
-            conn.commit()
-            conn.close()
-            return {"status": "ok", "geradas": len(questoes_geradas)}
-            
-    except httpx.HTTPStatusError as e:
-        conn.close()
-        # AQUI É O SEGREDO: Vamos descobrir a fofoca exata do erro que a Groq mandou
-        erro_real_da_groq = e.response.text
-        print(f"ERRO EXATO DA GROQ: {erro_real_da_groq}")
-        raise HTTPException(status_code=500, detail=f"Erro da Groq: {erro_real_da_groq}")
-        
-    except Exception as e:
-        conn.close()
-        print(f"Erro geral: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Falha ao processar: {str(e)}")
+                
+                resposta.raise_for_status() # Se der erro, pula pro except abaixo
+                
+                # Se chegou aqui, funcionou!
+                dados = resposta.json()
+                conteudo_str = dados['choices'][0]['message']['content'].strip()
+                
+                # Limpeza do JSON
+                if conteudo_str.startswith("```"):
+                    conteudo_str = conteudo_str.split('\n', 1)[1]
+                if conteudo_str.endswith("```"):
+                    conteudo_str = conteudo_str.rsplit('\n', 1)[0]
+                    
+                questoes_geradas = json.loads(conteudo_str)
+                
+                # Salva no banco e finaliza
+                for q in questoes_geradas:
+                    cursor.execute(
+                        'INSERT INTO questoes (disciplina_id, enunciado, opcoes, correta, explicacao) VALUES (%s, %s, %s, %s, %s)',
+                        (filtros.disciplina_id, q['enunciado'], json.dumps(q['opcoes']), q['correta'], q['explicacao'])
+                    )
+                
+                conn.commit()
+                conn.close()
+                return {"status": "ok", "geradas": len(questoes_geradas), "modelo_usado": modelo}
+                
+            except httpx.HTTPStatusError as e:
+                ultimo_erro = e.response.text
+                print(f"Modelo {modelo} falhou: {ultimo_erro}. Tentando o próximo...")
+                continue # Tenta o próximo modelo do Array
+            except Exception as e:
+                ultimo_erro = str(e)
+                print(f"Erro no parse com {modelo}: {ultimo_erro}. Tentando o próximo...")
+                continue
+
+    # Se todos os modelos falharem, aí sim ele chora e avisa o porquê.
+    conn.close()
+    raise HTTPException(status_code=500, detail=f"Todos os modelos da Groq falharam. Último erro: {ultimo_erro}")
