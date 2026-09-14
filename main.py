@@ -74,6 +74,9 @@ def init_db():
         )
     ''')
 
+    # CORREÇÃO 1: Garante que a coluna 'data' exista caso o banco seja da versão antiga
+    cursor.execute('ALTER TABLE progresso ADD COLUMN IF NOT EXISTS data TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
+
     # Insere matérias iniciais se estiver vazio
     cursor.execute('SELECT COUNT(*) as count FROM disciplinas')
     if cursor.fetchone()['count'] == 0:
@@ -265,7 +268,8 @@ async def gerar_questoes_ia(filtros: FiltrosIA):
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "llama3-70b-8192",
+                    # CORREÇÃO 2: Atualizado para o modelo mais recente da IA (Llama 3.1)
+                    "model": "llama-3.1-70b-versatile",
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.3
                 }
