@@ -3,7 +3,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, Dict
 import httpx
@@ -74,6 +74,7 @@ def init_db():
         )
     ''')
     
+    # Injetando as matérias genéricas que servem para qualquer concurso do Brasil
     disciplinas_padrao = [
         "Língua Portuguesa", "Matemática", "Raciocínio Lógico", "Informática",
         "Direito Constitucional", "Direito Administrativo", "Direito Penal", 
@@ -84,11 +85,13 @@ def init_db():
         "História", "Geografia", "Filosofia", "Sociologia"
     ]
     for d in disciplinas_padrao:
+        # ON CONFLICT DO NOTHING evita duplicar as matérias
         cursor.execute("INSERT INTO disciplinas (nome) VALUES (%s) ON CONFLICT (nome) DO NOTHING", (d,))
         
     conn.commit()
     conn.close()
 
+# Inicializa o banco ao ligar o servidor
 init_db()
 
 class ConfigAPI(BaseModel):
@@ -134,39 +137,6 @@ class SalvarAnotacaoRequest(BaseModel):
 class SalvarHtmlRequest(BaseModel):
     questao_id: int
     html: str
-
-# 👇 ROTAS PWA (MANIFEST E SERVICE WORKER NATIVOS) 👇
-@app.get("/manifest.json")
-def get_manifest():
-    return JSONResponse({
-        "name": "ProEstudos - Concursos 2.0",
-        "short_name": "ProEstudos",
-        "start_url": "/",
-        "display": "standalone",
-        "background_color": "#0f172a",
-        "theme_color": "#4f46e5",
-        "icons": [
-            {
-                "src": "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎓</text></svg>",
-                "sizes": "192x192 512x512",
-                "type": "image/svg+xml",
-                "purpose": "any maskable"
-            }
-        ]
-    })
-
-@app.get("/sw.js")
-def get_service_worker():
-    sw_code = """
-    self.addEventListener('install', (e) => {
-        e.waitUntil(caches.open('proestudos-v1').then((cache) => cache.addAll(['/'])));
-    });
-    self.addEventListener('fetch', (e) => {
-        e.respondWith(caches.match(e.request).then((response) => response || fetch(e.request)));
-    });
-    """
-    return Response(content=sw_code, media_type="application/javascript")
-# 👆 FIM DAS ROTAS PWA 👆
 
 @app.get("/")
 def index():
@@ -285,6 +255,7 @@ async def gerar_lote_questoes_ia(prompt: str, disciplina_id: int, topico_especif
         print(f"Erro ao processar lote da IA: {e}")
         if 'conn' in locals(): conn.close()
 
+# Mantém a rota /api/config funcionando silenciosamente para o frontend antigo não dar erro
 @app.get("/api/config")
 def get_config():
     return {"groq_key": "Gerenciada na Nuvem (Invisível e Segura)"}
@@ -297,6 +268,7 @@ def set_config(req: ConfigAPI):
 def reset_db():
     conn = get_db_connection()
     cursor = conn.cursor()
+    # TRUNCATE é a forma profissional de limpar bancos PostgreSQL e zerar o ID (CASCADE apaga as dependências)
     cursor.execute("TRUNCATE TABLE progresso, questoes, disciplinas RESTART IDENTITY CASCADE;")
     conn.commit()
     conn.close()
@@ -359,6 +331,7 @@ def get_dados():
             
     lista_historico = [{"data": k, "acertos": v["acertos"], "erros": v["erros"]} for k, v in historico_dias.items()]
 
+    # Streak (Ofensiva)
     cursor.execute("SELECT DATE(data_resolucao) as data FROM progresso GROUP BY DATE(data_resolucao) ORDER BY DATE(data_resolucao) DESC")
     datas_unicas = cursor.fetchall()
     streak = 0
