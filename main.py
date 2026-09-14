@@ -268,12 +268,15 @@ async def gerar_questoes_ia(filtros: FiltrosIA):
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "llama-3.3-70b-versatile",
+                    "model": "llama-3.1-8b-instant",  # Modelo mais rápido e garantido da Groq
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.3
                 }
             )
+            
+            # Se a Groq der erro, o código vai pular direto para a linha 'except httpx.HTTPStatusError'
             resposta.raise_for_status()
+            
             dados = resposta.json()
             conteudo_str = dados['choices'][0]['message']['content'].strip()
             
@@ -296,7 +299,14 @@ async def gerar_questoes_ia(filtros: FiltrosIA):
             conn.close()
             return {"status": "ok", "geradas": len(questoes_geradas)}
             
+    except httpx.HTTPStatusError as e:
+        conn.close()
+        # AQUI É O SEGREDO: Vamos descobrir a fofoca exata do erro que a Groq mandou
+        erro_real_da_groq = e.response.text
+        print(f"ERRO EXATO DA GROQ: {erro_real_da_groq}")
+        raise HTTPException(status_code=500, detail=f"Erro da Groq: {erro_real_da_groq}")
+        
     except Exception as e:
         conn.close()
-        print(f"Erro na geração da Groq: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Falha ao gerar questões com a IA: {str(e)}")
+        print(f"Erro geral: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Falha ao processar: {str(e)}")
