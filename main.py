@@ -268,8 +268,7 @@ async def gerar_questoes_ia(filtros: FiltrosIA):
                     "Content-Type": "application/json"
                 },
                 json={
-                    # CORREÇÃO 2: Atualizado para o modelo mais recente da IA (Llama 3.1)
-                    "model": "llama-3.1-70b-versatile",
+                    "model": "llama-3.3-70b-versatile",
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.3
                 }
